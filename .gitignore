@@ -1,0 +1,45 @@
+# ===== 忽略所有原文件 =====
+*.docx
+*.doc
+*.xlsx
+*.xls
+*.pptx
+*.ppt
+*.pdf
+
+# ===== 忽略生成/输出文件 =====
+*-已格式化*
+*-Mac版*
+*-方正字体版*
+测试-*
+temp-*
+
+# ===== 忽略 Python 虚拟环境 =====
+.venv/
+venv/
+env/
+
+# ===== 忽略 Python 缓存 =====
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# ===== 忽略系统文件 =====
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ===== 但不忽略 skill 相关文件 =====
+!.claude/
+!.claude/skills/
+!.claude/skills/document-format-skills/
+!.claude/skills/document-format-skills/**
+
+# ===== 但 skill 目录内仍需忽略缓存文件 =====
+.claude/skills/document-format-skills/**/__pycache__/
+.claude/skills/document-format-skills/**/*.pyc
