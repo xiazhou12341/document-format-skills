@@ -582,22 +582,23 @@ def detect_para_type(text, index, total, alignment, all_texts):
         # 1. 明确的公文标题模式
         title_patterns = [
             r'^关于.+的(通知|报告|请示|函|意见|决定|公告|通报|批复|说明|方案|总结|汇报|复函|答复|建议)$',
-            r'^.{2,30}(通知|报告|请示|函|意见|决定|公告|通报|批复|工作方案|工作总结|实施方案|管理办法|暂行规定)$',
+            r'^.{2,30}(通知|报告|请示|函|意见|决定|公告|通报|批复|工作方案|工作总结|实施方案|管理办法|暂行规定|建设方案|汇报)$',
+            r'^[一-鿿·]{2,30}(方案|总结|汇报|报告|计划|方案)$',
         ]
         for pattern in title_patterns:
             if re.match(pattern, text):
                 return 'title'
-        
-        # 2. 较长的标题（20-80字符），不以标点结尾
-        if 15 < len(text) < 80 and not re.search(r'[。！？，、；：]$', text):
+
+        # 2. 较短的标题（5-80字符），不以标点结尾，不以序号开头
+        if 4 < len(text) < 80 and not re.search(r'[。！？，、；：]$', text):
             # 排除以序号开头的
             if not re.match(r'^[一二三四五六七八九十\d（(]', text):
                 return 'title'
-        
+
         # 3. 居中的短文本（原本就是居中的）
         if alignment == WD_ALIGN_PARAGRAPH.CENTER and len(text) < 60:
             return 'title'
-    
+
     # ===== 其他都是正文 =====
     return 'body'
 
