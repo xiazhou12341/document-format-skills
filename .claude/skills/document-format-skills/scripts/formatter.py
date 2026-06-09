@@ -135,16 +135,16 @@ PRESETS = {
             'indent': 32,  # 2字符 = 2×16pt
             'line_spacing': 28,
         },
-        # 落款单位：三号仿宋，右对齐
+        # 落款单位：三号仿宋，居中（排在日期上方）
         'signature': {
             'font_cn': '仿宋_GB2312',
             'font_en': 'Times New Roman',
             'size': 16,
             'bold': False,
-            'align': 'right',
+            'align': 'center',  # 署名居中在日期上方
             'indent': 0,
         },
-        # 落款日期：三号仿宋，右对齐
+        # 落款日期：三号仿宋，右空四字
         'date': {
             'font_cn': '仿宋_GB2312',
             'font_en': 'Times New Roman',
@@ -152,6 +152,7 @@ PRESETS = {
             'bold': False,
             'align': 'right',
             'indent': 0,
+            'right_indent': 64,  # 右空四字（三号字：4×16pt）
         },
         # 附件行：三号仿宋，格式同正文（首行缩进2字符）
         'attachment': {
@@ -170,6 +171,36 @@ PRESETS = {
             'bold': False,
             'align': 'left',
             'indent': 32,
+        },
+        # 表格格式（外框粗线 + 内部细线的层次网格表）
+        'table': {
+            'border_style': 'thin_grid',     # 外框 1.0pt + 表头下 0.75pt + 内部 0.25pt
+            'font_cn': '仿宋_GB2312',       # 单元格文字：五号仿宋
+            'font_en': 'Times New Roman',
+            'size': 10.5,                    # 五号
+            'bold': False,
+            'header_font_cn': '黑体',       # 表头栏目：五号黑体
+            'header_font_en': 'Times New Roman',
+            'header_size': 10.5,             # 五号
+            'header_bold': False,            # 黑体本身醒目不额外加粗
+            'line_spacing': None,            # 单行间距
+            'first_line_indent': 0,
+            'row_height_cm': 0.7,
+            'border_size_pt': 0.5,
+            'width_percent': 100,
+            'auto_col_width': True,
+            'col_min_pct': 8,
+            'col_max_pct': 45,
+            'cell_margin_top_cm': 0.0,
+            'cell_margin_bottom_cm': 0.0,
+            'cell_margin_left_cm': 0.05,
+            'cell_margin_right_cm': 0.05,
+            'paragraph_single': True,
+            'after_table_blank_line': True,
+            'title_align': 'center',
+            'unit_align': 'right',
+            'unit_space_before_lines': 0.5,
+            'short_text_len': 4,
         },
     },
     'academic': {
@@ -237,8 +268,14 @@ def _iter_block_items(doc):
             yield Table(child, doc)
 
 
-def _set_table_borders(table, size_pt=0.5, color="000000"):
-    size = max(1, int(size_pt * 8))  # OOXML border size is in 1/8 pt
+def _set_table_borders(table, size_pt=0.5, color="000000", style='grid'):
+    """Set table borders.
+
+    Args:
+        style: 'grid' = full grid (all 6 edges, uniform thickness),
+               'three_line' = GB/T 9704 three-line table (top + bottom 1.5pt, no verticals),
+               'thin_grid' = outer frame 1.0pt + thin 0.25pt internal grid (practical standard).
+    """
     tbl = table._tbl
     tbl_pr = tbl.tblPr
     if tbl_pr is None:
@@ -253,13 +290,44 @@ def _set_table_borders(table, size_pt=0.5, color="000000"):
         for child in list(borders):
             borders.remove(child)
 
-    for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
-        elem = OxmlElement(f'w:{edge}')
-        elem.set(qn('w:val'), 'single')
-        elem.set(qn('w:sz'), str(size))
-        elem.set(qn('w:space'), '0')
-        elem.set(qn('w:color'), color)
-        borders.append(elem)
+    if style == 'three_line':
+        # 三线表：仅顶线 + 底线 1.5pt 粗线，无竖线 / 内部横线
+        thick_sz = str(int(1.5 * 8))  # 1.5pt = 12 eighths
+        for edge in ('top', 'bottom'):
+            elem = OxmlElement(f'w:{edge}')
+            elem.set(qn('w:val'), 'single')
+            elem.set(qn('w:sz'), thick_sz)
+            elem.set(qn('w:space'), '0')
+            elem.set(qn('w:color'), color)
+            borders.append(elem)
+    elif style == 'thin_grid':
+        # 外框 1.0pt 粗实线 + 内部 0.25pt 极细线
+        outer_sz = str(int(1.0 * 8))    # 1.0pt = 8 eighths (外框)
+        inner_sz = str(int(0.25 * 8))   # 0.25pt = 2 eighths (内部竖线/横线)
+        for edge in ('top', 'bottom', 'left', 'right'):
+            elem = OxmlElement(f'w:{edge}')
+            elem.set(qn('w:val'), 'single')
+            elem.set(qn('w:sz'), outer_sz)
+            elem.set(qn('w:space'), '0')
+            elem.set(qn('w:color'), color)
+            borders.append(elem)
+        for edge in ('insideH', 'insideV'):
+            elem = OxmlElement(f'w:{edge}')
+            elem.set(qn('w:val'), 'single')
+            elem.set(qn('w:sz'), inner_sz)
+            elem.set(qn('w:space'), '0')
+            elem.set(qn('w:color'), color)
+            borders.append(elem)
+    else:
+        # 全网格（旧行为）
+        size = max(1, int(size_pt * 8))  # OOXML border size in 1/8 pt
+        for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+            elem = OxmlElement(f'w:{edge}')
+            elem.set(qn('w:val'), 'single')
+            elem.set(qn('w:sz'), str(size))
+            elem.set(qn('w:space'), '0')
+            elem.set(qn('w:color'), color)
+            borders.append(elem)
 
 
 def _set_table_cell_margins(table, top_cm=0.0, bottom_cm=0.0, left_cm=0.05, right_cm=0.05):
@@ -462,8 +530,14 @@ def _is_table_unit(text):
     return re.match(r'^单位\\s*[:：]', text) is not None
 
 
-def _set_cell_borders(cell, size_pt=0.5, color="000000"):
-    size = max(1, int(size_pt * 8))
+def _set_cell_borders(cell, size_pt=0.5, color="000000", edges=None):
+    """Set cell borders.
+
+    Args:
+        edges: List of edge names to set. Default None = all 4 edges.
+               Empty list [] = remove all borders (clear).
+               Example: ['bottom'] = only bottom border.
+    """
     tc = cell._tc
     tc_pr = tc.tcPr
     if tc_pr is None:
@@ -478,13 +552,18 @@ def _set_cell_borders(cell, size_pt=0.5, color="000000"):
         for child in list(borders):
             borders.remove(child)
 
-    for edge in ('top', 'left', 'bottom', 'right'):
-        elem = OxmlElement(f'w:{edge}')
-        elem.set(qn('w:val'), 'single')
-        elem.set(qn('w:sz'), str(size))
-        elem.set(qn('w:space'), '0')
-        elem.set(qn('w:color'), color)
-        borders.append(elem)
+    if edges is None:
+        edges = ('top', 'left', 'bottom', 'right')
+
+    if edges:
+        size = max(1, int(size_pt * 8))
+        for edge in edges:
+            elem = OxmlElement(f'w:{edge}')
+            elem.set(qn('w:val'), 'single')
+            elem.set(qn('w:sz'), str(size))
+            elem.set(qn('w:space'), '0')
+            elem.set(qn('w:color'), color)
+            borders.append(elem)
 
 
 def detect_para_type(text, index, total, alignment, all_texts):
@@ -719,7 +798,13 @@ def format_paragraph(para, fmt, para_type, line_spacing_pt=28, first_line_bold=F
     
     # 段落左缩进清零（重要：确保"文本之前缩进"为0）
     pf.left_indent = Pt(0)
-    pf.right_indent = Pt(0)
+
+    # 右缩进（支持"右空四字"等格式）
+    right_indent = fmt.get('right_indent', 0)
+    if right_indent > 0:
+        pf.right_indent = Pt(right_indent)
+    else:
+        pf.right_indent = Pt(0)
     
     # 首行缩进
     indent = fmt.get('indent', 0)
@@ -944,6 +1029,7 @@ def format_document(input_path, output_path, preset_name='official'):
     table_fmt = preset.get('table', {})
     table_defaults = {
         'optimize': True,
+        'border_style': 'grid',       # 'grid' = 全网格, 'three_line' = 三线表
         'border_size_pt': 0.5,
         'width_percent': 100,
         'auto_col_width': True,
@@ -968,8 +1054,11 @@ def format_document(input_path, output_path, preset_name='official'):
     tbl_size = table_fmt.get('size', body_fmt.get('size', 16))
     tbl_bold = table_fmt.get('bold', False)
     tbl_line_spacing = table_fmt.get('line_spacing', body_fmt.get('line_spacing', 28))
-    tbl_header_bold = table_fmt.get('header_bold', False)
     tbl_first_line_indent = table_fmt.get('first_line_indent', 0)
+    # 表头专用字体（五号黑体）
+    tbl_header_font_cn = table_fmt.get('header_font_cn', tbl_font_cn)
+    tbl_header_size = table_fmt.get('header_size', tbl_size)
+    tbl_header_bold = table_fmt.get('header_bold', True)
 
     blocks = list(_iter_block_items(doc))
     for idx, block in enumerate(blocks):
@@ -981,7 +1070,8 @@ def format_document(input_path, output_path, preset_name='official'):
             table.autofit = not table_cfg.get('auto_col_width', True)
             _set_table_width_percent(table, table_cfg.get('width_percent', 100))
             _set_table_indent(table, 0)
-            _set_table_borders(table, size_pt=table_cfg.get('border_size_pt', 0.5))
+            _set_table_borders(table, size_pt=table_cfg.get('border_size_pt', 0.5),
+                               style=table_cfg.get('border_style', 'grid'))
             _set_table_cell_margins(
                 table,
                 top_cm=table_cfg.get('cell_margin_top_cm', 0.0),
@@ -1050,16 +1140,36 @@ def format_document(input_path, output_path, preset_name='official'):
                 row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
 
             for col_idx, cell in enumerate(row.cells):
-                if table_cfg.get('optimize', True):
+                # 单元格边框
+                border_style = table_cfg.get('border_style', 'grid')
+                if border_style == 'three_line':
+                    if row_idx == 0:
+                        # 三线表：仅表头行设下边框 0.5pt（表头分隔线）
+                        _set_cell_borders(cell, size_pt=0.5, edges=['bottom'])
+                    else:
+                        # 非表头行：无边框
+                        _set_cell_borders(cell, edges=[])
+                elif border_style == 'thin_grid':
+                    if row_idx == 0:
+                        # 外框细网格表：表头行下设 0.75pt 中粗分隔线
+                        _set_cell_borders(cell, size_pt=0.75, edges=['bottom'])
+                    else:
+                        # 非表头行：清除单元格边框（表级 insideH/insideV 0.25pt 已处理）
+                        _set_cell_borders(cell, edges=[])
+                elif table_cfg.get('optimize', True):
                     _set_cell_borders(cell, size_pt=table_cfg.get('border_size_pt', 0.5))
 
                 cell_text = ''.join(p.text for p in cell.paragraphs).strip()
                 for para in cell.paragraphs:
-                    # 字体设置
+                    # 字体设置：表头行使用专用字体（黑体），非表头使用正文兼容字体
                     if para.text.strip():
-                        is_header = (row_idx == 0 and tbl_header_bold)
-                        for run in para.runs:
-                            set_font(run, tbl_font_cn, tbl_font_en, tbl_size, bold=(tbl_bold or is_header))
+                        is_header = (row_idx == 0)
+                        if is_header:
+                            for run in para.runs:
+                                set_font(run, tbl_header_font_cn, tbl_font_en, tbl_header_size, bold=tbl_header_bold)
+                        else:
+                            for run in para.runs:
+                                set_font(run, tbl_font_cn, tbl_font_en, tbl_size, bold=tbl_bold)
 
                     # 段落格式
                     para.paragraph_format.first_line_indent = Pt(tbl_first_line_indent)
