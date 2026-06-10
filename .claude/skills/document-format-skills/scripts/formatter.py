@@ -174,7 +174,7 @@ PRESETS = {
         },
         # 表格格式（外框粗线 + 内部细线的层次网格表）
         'table': {
-            'border_style': 'thin_grid',     # 外框 1.0pt + 表头下 0.75pt + 内部 0.25pt
+            'border_style': 'thin_grid',     # 外框 1.5pt + 内部 0.75pt
             'font_cn': '仿宋_GB2312',       # 单元格文字：五号仿宋
             'font_en': 'Times New Roman',
             'size': 10.5,                    # 五号
@@ -186,7 +186,6 @@ PRESETS = {
             'line_spacing': None,            # 单行间距
             'first_line_indent': 0,
             'row_height_cm': 0.7,
-            'border_size_pt': 0.5,
             'width_percent': 100,
             'auto_col_width': True,
             'col_min_pct': 8,
@@ -268,13 +267,26 @@ def _iter_block_items(doc):
             yield Table(child, doc)
 
 
+def _strip_all_cell_borders(table):
+    """Remove w:tcBorders from every cell, ensuring only tblBorders controls rendering."""
+    for row in table.rows:
+        for cell in row.cells:
+            tc = cell._tc
+            tc_pr = tc.tcPr
+            if tc_pr is None:
+                continue
+            tc_borders = tc_pr.find(qn('w:tcBorders'))
+            if tc_borders is not None:
+                tc_pr.remove(tc_borders)
+
+
 def _set_table_borders(table, size_pt=0.5, color="000000", style='grid'):
     """Set table borders.
 
     Args:
         style: 'grid' = full grid (all 6 edges, uniform thickness),
                'three_line' = GB/T 9704 three-line table (top + bottom 1.5pt, no verticals),
-               'thin_grid' = outer frame 1.0pt + thin 0.25pt internal grid (practical standard).
+               'thin_grid' = outer frame 1.5pt + inner lines 0.75pt (GB/T 9704 practical standard).
     """
     tbl = table._tbl
     tbl_pr = tbl.tblPr
@@ -301,9 +313,9 @@ def _set_table_borders(table, size_pt=0.5, color="000000", style='grid'):
             elem.set(qn('w:color'), color)
             borders.append(elem)
     elif style == 'thin_grid':
-        # 外框 1.0pt 粗实线 + 内部 0.25pt 极细线
-        outer_sz = str(int(1.0 * 8))    # 1.0pt = 8 eighths (外框)
-        inner_sz = str(int(0.25 * 8))   # 0.25pt = 2 eighths (内部竖线/横线)
+        # 外框 1.5pt 粗实线 + 内部 0.75pt 细实线
+        outer_sz = str(int(1.5 * 8))   # 1.5pt = 12 eighths（外框）
+        inner_sz = str(int(0.75 * 8))  # 0.75pt = 6 eighths（内部横线/竖线）
         for edge in ('top', 'bottom', 'left', 'right'):
             elem = OxmlElement(f'w:{edge}')
             elem.set(qn('w:val'), 'single')
@@ -530,14 +542,8 @@ def _is_table_unit(text):
     return re.match(r'^单位\\s*[:：]', text) is not None
 
 
-def _set_cell_borders(cell, size_pt=0.5, color="000000", edges=None):
-    """Set cell borders.
-
-    Args:
-        edges: List of edge names to set. Default None = all 4 edges.
-               Empty list [] = remove all borders (clear).
-               Example: ['bottom'] = only bottom border.
-    """
+def _set_cell_borders(cell, size_pt=0.5, color="000000"):
+    size = max(1, int(size_pt * 8))
     tc = cell._tc
     tc_pr = tc.tcPr
     if tc_pr is None:
@@ -552,18 +558,13 @@ def _set_cell_borders(cell, size_pt=0.5, color="000000", edges=None):
         for child in list(borders):
             borders.remove(child)
 
-    if edges is None:
-        edges = ('top', 'left', 'bottom', 'right')
-
-    if edges:
-        size = max(1, int(size_pt * 8))
-        for edge in edges:
-            elem = OxmlElement(f'w:{edge}')
-            elem.set(qn('w:val'), 'single')
-            elem.set(qn('w:sz'), str(size))
-            elem.set(qn('w:space'), '0')
-            elem.set(qn('w:color'), color)
-            borders.append(elem)
+    for edge in ('top', 'left', 'bottom', 'right'):
+        elem = OxmlElement(f'w:{edge}')
+        elem.set(qn('w:val'), 'single')
+        elem.set(qn('w:sz'), str(size))
+        elem.set(qn('w:space'), '0')
+        elem.set(qn('w:color'), color)
+        borders.append(elem)
 
 
 def detect_para_type(text, index, total, alignment, all_texts):
@@ -1072,6 +1073,8 @@ def format_document(input_path, output_path, preset_name='official'):
             _set_table_indent(table, 0)
             _set_table_borders(table, size_pt=table_cfg.get('border_size_pt', 0.5),
                                style=table_cfg.get('border_style', 'grid'))
+            # 彻底清除所有单元格残留的 w:tcBorders，避免与 tblBorders 叠加产生双线
+            _strip_all_cell_borders(table)
             _set_table_cell_margins(
                 table,
                 top_cm=table_cfg.get('cell_margin_top_cm', 0.0),
@@ -1140,25 +1143,6 @@ def format_document(input_path, output_path, preset_name='official'):
                 row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
 
             for col_idx, cell in enumerate(row.cells):
-                # 单元格边框
-                border_style = table_cfg.get('border_style', 'grid')
-                if border_style == 'three_line':
-                    if row_idx == 0:
-                        # 三线表：仅表头行设下边框 0.5pt（表头分隔线）
-                        _set_cell_borders(cell, size_pt=0.5, edges=['bottom'])
-                    else:
-                        # 非表头行：无边框
-                        _set_cell_borders(cell, edges=[])
-                elif border_style == 'thin_grid':
-                    if row_idx == 0:
-                        # 外框细网格表：表头行下设 0.75pt 中粗分隔线
-                        _set_cell_borders(cell, size_pt=0.75, edges=['bottom'])
-                    else:
-                        # 非表头行：清除单元格边框（表级 insideH/insideV 0.25pt 已处理）
-                        _set_cell_borders(cell, edges=[])
-                elif table_cfg.get('optimize', True):
-                    _set_cell_borders(cell, size_pt=table_cfg.get('border_size_pt', 0.5))
-
                 cell_text = ''.join(p.text for p in cell.paragraphs).strip()
                 for para in cell.paragraphs:
                     # 字体设置：表头行使用专用字体（黑体），非表头使用正文兼容字体
